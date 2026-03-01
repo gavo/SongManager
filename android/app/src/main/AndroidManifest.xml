@@ -18,10 +18,21 @@
         android:launchMode="singleTask"
         android:windowSoftInputMode="adjustResize"
         android:exported="true">
-        <intent-filter>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.LAUNCHER" />
-        </intent-filter>
+          <intent-filter>
+              <action android:name="android.intent.action.MAIN" />
+              <category android:name="android.intent.category.LAUNCHER" />
+          </intent-filter>
+          
+          <!-- Filtro para permitir Abrir Archivos .txt desde fuera de la app (Whatsapp, Files) -->
+          <intent-filter>
+              <action android:name="android.intent.action.VIEW" />
+              <action android:name="android.intent.action.SEND" />
+              <category android:name="android.intent.category.DEFAULT" />
+              <category android:name="android.intent.category.BROWSABLE" />
+              <data android:mimeType="text/plain" />
+              <data android:scheme="content" />
+              <data android:scheme="file" />
+          </intent-filter>
       </activity>
     </application>
 </manifest>

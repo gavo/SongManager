@@ -11,17 +11,21 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
-  FlatList
+  FlatList,
+  Linking
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
 import Share from 'react-native-share';
 import Icon from 'react-native-vector-icons/FontAwesome5';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import DocumentPicker, { types } from 'react-native-document-picker';
+import RNFS from 'react-native-fs';
 
 import { parseSongText } from './src/engine/SongParser';
 import { transposeChord, padChord } from './src/engine/ChordEngine';
-import { initGoogleSignIn, signIn, signInSilently, signOut, saveSongToDrive, listSongsFromDrive, loadSongFromDrive, deleteSongFromDrive, DriveUser } from './src/services/GoogleDriveService';
+import { initGoogleSignIn, signIn, signInSilently, signOut, saveSongToDrive, listSongsFromDrive, loadSongFromDrive, deleteSongFromDrive, syncOfflineQueue, DriveUser } from './src/services/GoogleDriveService';
 
 function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
@@ -31,6 +35,7 @@ function App(): React.JSX.Element {
   const [user, setUser] = useState<DriveUser | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLoadingSongs, setIsLoadingSongs] = useState(false);
   const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [savedSongs, setSavedSongs] = useState<any[]>([]);
@@ -72,6 +77,20 @@ function App(): React.JSX.Element {
 
     autoLogin();
   }, []);
+
+  // Background watcher: trigger Drive upload as soon as Wifi/Internet comes back
+  React.useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      if (state.isConnected && user) {
+        // Run invisible queue uploader
+        syncOfflineQueue();
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user]);
 
   // Save session state automatically whenever it changes
   React.useEffect(() => {
@@ -115,6 +134,56 @@ function App(): React.JSX.Element {
     });
   }, [rawText, transposeSteps]);
 
+  // Listen for incoming Intents (e.g. Open With .txt from outside the app)
+  React.useEffect(() => {
+    const handleIncomingIntent = async (url: string | null) => {
+      if (url) {
+        try {
+          // Leer la URI proveniente del Intent (suele ser content:// o file://)
+          const textContent = await RNFS.readFile(url, 'utf8');
+
+          let defaultName = 'Canción Recibida';
+          try {
+            // Intentar extraer nombre original
+            const stat = await RNFS.stat(url);
+            if (stat && (stat as any).originalFilepath) {
+              const parts = (stat as any).originalFilepath.split('/');
+              const lastPart = parts[parts.length - 1];
+              if (lastPart) defaultName = decodeURIComponent(lastPart).replace(/\.txt$/i, '');
+            } else {
+              const parts = decodeURIComponent(url).split('/');
+              const lastPart = parts[parts.length - 1];
+              // Evitar nombrar la canción como "content:..." basura
+              if (lastPart && !lastPart.includes('content:')) defaultName = lastPart.replace(/\.txt$/i, '');
+            }
+          } catch (e) { }
+
+          // Resetear el editor activo cargando la nueva canción
+          setCurrentFileId(null);
+          setSongTitle(defaultName);
+          setRawText(textContent);
+          setTransposeSteps(0);
+
+          Alert.alert('Archivo Cargado', 'El archivo ha sido importado al editor. Revisa el contenido y presiona Guardar para enviarlo a Google Drive.');
+        } catch (e: any) {
+          console.log("Error leyendo el Intent URL", e);
+        }
+      }
+    };
+
+    // Al abrir la app fría desde un intent
+    Linking.getInitialURL().then(handleIncomingIntent);
+
+    // Al reanudar la app en background desde un intent
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      handleIncomingIntent(url);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   // Compute the first chord of the song based on the transposed data
   const firstChord = useMemo(() => {
     for (const group of songData) {
@@ -129,11 +198,13 @@ function App(): React.JSX.Element {
   const handleTransposeDown = () => setTransposeSteps((prev: number) => prev - 1);
 
   const handleLogout = async () => {
+    setIsMenuOpen(false);
     await signOut();
     setUser(null);
   };
 
   const handleSaveToDrive = async () => {
+    setIsMenuOpen(false);
     if (!user) return Alert.alert('Error', 'Debes iniciar sesión primero');
     if (!songTitle.trim()) return Alert.alert('Error', 'Debes ponerle un título a la canción');
 
@@ -150,6 +221,7 @@ function App(): React.JSX.Element {
   };
 
   const handleDeleteDriveSong = async () => {
+    setIsMenuOpen(false);
     if (!currentFileId) return Alert.alert('Operación no Válida', 'Para borrar una canción primero debes seleccionarla o guardarla en Drive.');
 
     Alert.alert(
@@ -175,6 +247,7 @@ function App(): React.JSX.Element {
   };
 
   const handleOpenLoadModal = async () => {
+    setIsMenuOpen(false);
     setModalVisible(true);
     setIsLoadingSongs(true);
     setSearchQuery('');
@@ -211,21 +284,81 @@ function App(): React.JSX.Element {
     return savedSongs.filter(song => normalize(song.name).includes(query));
   }, [savedSongs, searchQuery]);
 
+  const handleImportLocalSong = async () => {
+    setIsMenuOpen(false);
+    try {
+      const result = await DocumentPicker.pickSingle({
+        type: [types.plainText],
+      });
+
+      if (result && result.uri) {
+        // Read file content and extract name
+        const textContent = await RNFS.readFile(result.uri, 'utf8');
+        const defaultName = result.name ? result.name.replace('.txt', '') : 'Canción Local';
+
+        // Reset editor with local song data
+        setCurrentFileId(null); // Because this file is not on Drive yet
+        setSongTitle(defaultName);
+        setRawText(textContent);
+        setTransposeSteps(0);
+
+        Alert.alert('Importación Exitosa', 'El archivo local ha sido cargado en el editor. Recuerda Guardar para subirlo a tu Drive.');
+      }
+    } catch (err: any) {
+      if (DocumentPicker.isCancel(err)) {
+        // User cancelled, do nothing
+      } else {
+        Alert.alert('Error', 'No se pudo leer el archivo seleccionado: ' + err.message);
+      }
+    }
+  };
+
   const handleShareWhatsApp = async () => {
     try {
       if (viewShotRef.current && viewShotRef.current.capture) {
         // Capture screenshot of the song view
         const uri = await viewShotRef.current.capture();
 
+        const shareText = `${songTitle || 'Canción'} (en ${firstChord})`;
         // Share via native intent
         await Share.open({
           url: uri,
-          title: songTitle || 'Compartir Acordes',
-          message: songTitle || 'Canción',
+          title: shareText,
+          message: shareText,
           // We don't force specifically WhatsApp to give the user freedom, 
           // but the native share sheet makes it 1 tap away.
         });
       }
+    } catch (error: any) {
+      if (error.message !== 'User did not share') {
+        Alert.alert('Error al compartir', 'Ocurrió un problema: ' + error.message);
+      }
+    }
+  };
+
+  const handleShareTextFile = async () => {
+    try {
+      if (!rawText) {
+        Alert.alert('Error', 'No hay canción cargada para compartir.');
+        return;
+      }
+
+      // Filter out invalid characters for file name
+      const safeTitle = (songTitle || 'Cancion').replace(/[^a-zA-Z0-9_-\s]/g, '').trim();
+      const fileName = `${safeTitle}.txt`;
+      const filePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
+
+      await RNFS.writeFile(filePath, rawText, 'utf8');
+
+      const shareText = `Te comparto la canción: ${songTitle || 'Canción'} (en ${firstChord})`;
+
+      await Share.open({
+        url: `file://${filePath}`,
+        title: shareText,
+        message: shareText,
+        type: 'text/plain',
+      });
+
     } catch (error: any) {
       if (error.message !== 'User did not share') {
         Alert.alert('Error al compartir', 'Ocurrió un problema: ' + error.message);
@@ -256,13 +389,20 @@ function App(): React.JSX.Element {
               </View>
             </TouchableOpacity>
 
-            <Text
-              style={[styles.transposeValue, { flex: 1, textAlign: 'center', fontSize: 26, marginHorizontal: 15 }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-            >
-              {firstChord}
-            </Text>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginHorizontal: 15 }}>
+              <Text
+                style={[styles.transposeValue, { fontSize: 26, color: '#FFFFFF' }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {firstChord}
+              </Text>
+              {transposeSteps !== 0 && (
+                <Text style={{ fontSize: 16, color: 'rgba(255,255,255,0.7)', fontWeight: '600', marginLeft: 8 }}>
+                  {`${transposeSteps > 0 ? '+' : ''}${transposeSteps}`}
+                </Text>
+              )}
+            </View>
 
             <TouchableOpacity style={styles.button} onPress={handleTransposeUp}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -278,22 +418,38 @@ function App(): React.JSX.Element {
           <View style={styles.editorContainer}>
             <View style={styles.cloudToolbar}>
               {user ? (
-                <View style={styles.userBar}>
-                  <Text style={styles.userName}>Hola, {user.name || 'Usuario'}</Text>
-                  <View style={styles.actionButtonsRow}>
-                    <TouchableOpacity style={styles.cloudButtonLoad} onPress={handleOpenLoadModal}>
-                      <Icon name="folder-open" size={20} color="#FFFFFF" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.cloudButton} onPress={handleSaveToDrive} disabled={isSaving}>
-                      {isSaving ? <ActivityIndicator size="small" color="#FFF" /> : <Icon name="save" size={20} color="#FFFFFF" />}
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.cloudButtonDelete} onPress={handleDeleteDriveSong}>
-                      <Icon name="trash-alt" size={20} color="#FFFFFF" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                      <Icon name="sign-out-alt" size={20} color="#FFFFFF" />
-                    </TouchableOpacity>
-                  </View>
+                <View style={[styles.userBar, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', position: 'relative', zIndex: 100 }]}>
+                  <Text style={[styles.userName, { marginBottom: 0 }]}>Hola, {user.name || 'Usuario'}</Text>
+
+                  <TouchableOpacity style={styles.menuToggleButton} onPress={() => setIsMenuOpen(!isMenuOpen)}>
+                    <Icon name="ellipsis-v" size={20} color="#4A5568" />
+                  </TouchableOpacity>
+
+                  {isMenuOpen && (
+                    <View style={styles.dropdownMenu}>
+                      <TouchableOpacity style={styles.menuItem} onPress={handleOpenLoadModal}>
+                        <Icon name="folder-open" size={16} color="#3182CE" style={styles.menuIcon} />
+                        <Text style={styles.menuItemText}>Mis Canciones</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.menuItem} onPress={handleImportLocalSong}>
+                        <Icon name="file-import" size={16} color="#805AD5" style={styles.menuIcon} />
+                        <Text style={styles.menuItemText}>Importar Archivo</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.menuItem} onPress={handleSaveToDrive} disabled={isSaving}>
+                        {isSaving ? <ActivityIndicator size="small" color="#48BB78" style={styles.menuIcon} /> : <Icon name="save" size={16} color="#48BB78" style={styles.menuIcon} />}
+                        <Text style={styles.menuItemText}>Guardar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.menuItem} onPress={handleDeleteDriveSong}>
+                        <Icon name="trash-alt" size={16} color="#E53E3E" style={styles.menuIcon} />
+                        <Text style={styles.menuItemText}>Eliminar Canción</Text>
+                      </TouchableOpacity>
+                      <View style={styles.menuDivider} />
+                      <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
+                        <Icon name="sign-out-alt" size={16} color="#F56565" style={styles.menuIcon} />
+                        <Text style={styles.menuItemText}>Cerrar Sesión</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               ) : (
                 <View style={[styles.userBar, { justifyContent: 'center', backgroundColor: 'transparent' }]}>
@@ -327,12 +483,17 @@ function App(): React.JSX.Element {
 
           <View style={styles.previewContainer}>
             <View style={styles.previewHeader}>
-              <Text style={styles.sectionTitle}>
-                {songTitle || 'Sin Título'}   en {firstChord}
+              <Text style={styles.previewTitle} numberOfLines={2}>
+                {songTitle || 'Sin Título'} (en {firstChord})
               </Text>
-              <TouchableOpacity style={styles.shareButton} onPress={handleShareWhatsApp}>
-                <Icon name="whatsapp" brand size={24} color="#FFFFFF" />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TouchableOpacity style={[styles.shareButton, { marginRight: 10, backgroundColor: '#805AD5' }]} onPress={handleShareTextFile}>
+                  <Icon name="file-export" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.shareButton} onPress={handleShareWhatsApp}>
+                  <Icon name="whatsapp" brand size={24} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.songSheetWrapper}>
@@ -431,13 +592,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F4F8', // Softer, more modern background color
   },
   header: {
-    paddingVertical: 20,
-    paddingHorizontal: 25,
-    backgroundColor: '#FFFFFF',
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
     alignItems: 'center',
     elevation: 8,
+    paddingVertical: 5,
+    backgroundColor: '#4f575fff',
     shadowColor: '#1A202C',
     shadowOpacity: 0.08,
     shadowRadius: 10,
@@ -454,16 +612,15 @@ const styles = StyleSheet.create({
   transposeControls: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F7FAFC',
-    borderRadius: 30,
+    borderRadius: 5,
     padding: 5,
   },
   button: {
-    backgroundColor: '#3182CE',
+    backgroundColor: '#0d4594ff',
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 24,
-    shadowColor: '#3182CE',
+    borderRadius: 16,
+    shadowColor: '#224270ff',
     shadowOpacity: 0.3,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
@@ -487,74 +644,60 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 15,
-    elevation: 2,
+    elevation: 10,
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
+    zIndex: 99,
   },
   userBar: {
     flexDirection: 'column',
     justifyContent: 'center',
     alignItems: 'flex-start',
     gap: 15,
+    zIndex: 100,
   },
-  actionButtonsRow: {
+  menuToggleButton: {
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#F7FAFC',
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: 50,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 8,
+    minWidth: 180,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    zIndex: 999,
+  },
+  menuItem: {
     flexDirection: 'row',
-    alignSelf: 'flex-end',
-    gap: 10,
-  },
-  cloudButton: {
-    width: 44,
-    height: 44,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#48BB78',
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#48BB78',
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
-  cloudButtonLoad: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#3182CE',
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#3182CE',
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
+  menuIcon: {
+    width: 24,
+    textAlign: 'center',
+    marginRight: 10,
   },
-  cloudButtonDelete: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#E53E3E',
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#E53E3E',
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
+  menuItemText: {
+    fontSize: 15,
+    color: '#2D3748',
+    fontWeight: '500',
   },
-  logoutButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F56565',
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#F56565',
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
+  menuDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 4,
   },
   cloudButtonLogin: {
     flexDirection: 'row',
@@ -583,8 +726,15 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
+  previewTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#2D3748',
+    marginBottom: 10,
+  },
   editorContainer: {
     marginBottom: 30,
+    zIndex: 10,
   },
   titleInput: {
     backgroundColor: '#FFFFFF',

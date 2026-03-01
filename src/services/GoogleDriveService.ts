@@ -1,4 +1,9 @@
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import { Alert } from 'react-native';
+
+let isSyncing = false;
 
 export const initGoogleSignIn = () => {
     GoogleSignin.configure({
@@ -119,6 +124,37 @@ const getOrCreateFolder = async (accessToken: string): Promise<string> => {
  */
 export const saveSongToDrive = async (fileName: string, rawText: string) => {
     try {
+        const networkState = await NetInfo.fetch();
+        const fullFileName = fileName.endsWith('.txt') ? fileName : `${fileName}.txt`;
+        const offlineId = `offline_${Date.now()}`;
+
+        if (!networkState.isConnected) {
+            // OFFLINE SAVE LOGIC
+
+            // 1. Save text locally
+            await AsyncStorage.setItem(`@song_${offlineId}`, rawText);
+
+            // 2. Mock a file object for the list
+            const mockFile = { id: offlineId, name: fullFileName, modifiedTime: new Date().toISOString() };
+
+            // 3. Update the offline song list (if exists) so the user immediately sees it
+            const cachedListStr = await AsyncStorage.getItem('@songs_list');
+            let cachedList = JSON.parse(cachedListStr || "[]");
+            cachedList = cachedList.filter((f: any) => f.name !== mockFile.name); // basic overwrite UI patch
+            cachedList.unshift(mockFile);
+            await AsyncStorage.setItem('@songs_list', JSON.stringify(cachedList));
+
+            // 4. Add to the Synchronization Queue
+            const queueStr = await AsyncStorage.getItem('@sync_queue');
+            let queue = JSON.parse(queueStr || "[]");
+            // Remove older edits to the exact same file if user mashed "save" offline multiple times
+            queue = queue.filter((item: any) => item.fileName !== fileName);
+            queue.push({ fileName, rawText, timestamp: Date.now() });
+
+            await AsyncStorage.setItem('@sync_queue', JSON.stringify(queue));
+            return { id: offlineId };
+        }
+
         const tokens = await GoogleSignin.getTokens();
         const accessToken = tokens.accessToken;
 
@@ -127,7 +163,6 @@ export const saveSongToDrive = async (fileName: string, rawText: string) => {
         }
 
         const folderId = await getOrCreateFolder(accessToken);
-        const fullFileName = fileName.endsWith('.txt') ? fileName : `${fileName}.txt`;
 
         // 1. Check if file already exists to avoid generating duplicates
         const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${encodeURIComponent(fullFileName)}' and '${folderId}' in parents and trashed=false&spaces=drive`;
@@ -178,6 +213,19 @@ export const saveSongToDrive = async (fileName: string, rawText: string) => {
         });
 
         const result = await response.json();
+
+        // Caching the newly saved text and updating local metadata list so it's ready for next offline trigger
+        if (result && result.id) {
+            await AsyncStorage.setItem(`@song_${result.id}`, rawText);
+
+            // Overwrite into cache list to keep offline files synced with online reality
+            const cachedListStr = await AsyncStorage.getItem('@songs_list');
+            let cachedList = JSON.parse(cachedListStr || "[]");
+            cachedList = cachedList.filter((f: any) => f.name !== fullFileName && !f.id.startsWith('offline_'));
+            cachedList.unshift({ id: result.id, name: fullFileName, modifiedTime: new Date().toISOString() });
+            await AsyncStorage.setItem('@songs_list', JSON.stringify(cachedList));
+        }
+
         return result; // return parsed JSON object which contains file ID
     } catch (error) {
         console.error('Error saving to Drive:', error);
@@ -190,6 +238,12 @@ export const saveSongToDrive = async (fileName: string, rawText: string) => {
  */
 export const listSongsFromDrive = async () => {
     try {
+        const networkState = await NetInfo.fetch();
+        if (!networkState.isConnected) {
+            const cachedList = await AsyncStorage.getItem('@songs_list');
+            return cachedList ? JSON.parse(cachedList) : [];
+        }
+
         const tokens = await GoogleSignin.getTokens();
         const accessToken = tokens.accessToken;
         if (!accessToken) throw new Error('Not authenticated');
@@ -203,18 +257,36 @@ export const listSongsFromDrive = async () => {
         });
 
         const data = await response.json();
-        return data.files || [];
+        const files = data.files || [];
+
+        await AsyncStorage.setItem('@songs_list', JSON.stringify(files));
+        return files;
     } catch (error) {
         console.error('Error listing songs:', error);
-        throw error;
+        const cachedList = await AsyncStorage.getItem('@songs_list');
+        return cachedList ? JSON.parse(cachedList) : [];
     }
 };
 
 /**
- * Downloads the text content of a specific file ID.
+ * Downloads the text content of a specific file ID or pulls from cache if offline.
  */
 export const loadSongFromDrive = async (fileId: string): Promise<string> => {
     try {
+        const networkState = await NetInfo.fetch();
+
+        // Always try cache if it's an offline draft regardless of internet state
+        if (!networkState.isConnected || fileId.startsWith('offline_')) {
+            const localContent = await AsyncStorage.getItem(`@song_${fileId}`);
+            if (localContent !== null) return localContent;
+
+            Alert.alert(`DEBUG ID: ${fileId}`);
+            const allKeys = await AsyncStorage.getAllKeys();
+            console.log("DUMP ALL CACHE KEYS:", allKeys);
+
+            throw new Error('Archivo desconectado no hallado localmente');
+        }
+
         const tokens = await GoogleSignin.getTokens();
         const accessToken = tokens.accessToken;
         if (!accessToken) throw new Error('Not authenticated');
@@ -226,9 +298,12 @@ export const loadSongFromDrive = async (fileId: string): Promise<string> => {
         if (!response.ok) throw new Error('Failed to download file');
 
         const text = await response.text();
+        await AsyncStorage.setItem(`@song_${fileId}`, text);
         return text;
     } catch (error) {
         console.error('Error loading song:', error);
+        const localContent = await AsyncStorage.getItem(`@song_${fileId}`);
+        if (localContent !== null) return localContent;
         throw error;
     }
 };
@@ -253,5 +328,68 @@ export const deleteSongFromDrive = async (fileId: string): Promise<boolean> => {
     } catch (error) {
         console.error('Error deleting song:', error);
         throw error;
+    }
+};
+
+/**
+ * Checks the async storage offline queue and attempts to upload everything to Drive.
+ */
+export const syncOfflineQueue = async () => {
+    if (isSyncing) return;
+
+    try {
+        isSyncing = true;
+
+        const networkState = await NetInfo.fetch();
+        if (!networkState.isConnected) {
+            isSyncing = false;
+            return; // Wait until next launch
+        }
+
+        const queueStr = await AsyncStorage.getItem('@sync_queue');
+        if (!queueStr) {
+            isSyncing = false;
+            return;
+        }
+
+        let queue = JSON.parse(queueStr);
+        if (!queue || queue.length === 0) {
+            isSyncing = false;
+            return;
+        }
+
+        // Ensure user is signed in to perform real saves safely
+        const tokens = await GoogleSignin.getTokens();
+        if (!tokens || !tokens.accessToken) {
+            isSyncing = false;
+            return;
+        }
+
+        console.log(`[SYNC] Sincronizando ${queue.length} archivo(s) offline hacia Google Drive...`);
+        let filesRemaining = [];
+
+        for (const item of queue) {
+            try {
+                // By calling saveSongToDrive here, it naturally bypasses the offline guard
+                // because networkState IS connected now.
+                const res = await saveSongToDrive(item.fileName, item.rawText);
+                console.log(`[SYNC] Subido exitosamente: ${item.fileName} -> ID: ${res.id}`);
+            } catch (err) {
+                console.error(`[SYNC] Error subiendo en fondo: ${item.fileName}`, err);
+                filesRemaining.push(item); // Keep in queue for next retry
+            }
+        }
+
+        // Keep files that failed, or clear the queue completely if all uploaded correctly
+        if (filesRemaining.length > 0) {
+            await AsyncStorage.setItem('@sync_queue', JSON.stringify(filesRemaining));
+        } else {
+            await AsyncStorage.removeItem('@sync_queue');
+        }
+
+    } catch (e) {
+        console.error('Background Sync Failed:', e);
+    } finally {
+        isSyncing = false;
     }
 };
