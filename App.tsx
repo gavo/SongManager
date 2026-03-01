@@ -12,7 +12,8 @@ import {
   Modal,
   ActivityIndicator,
   FlatList,
-  Linking
+  Linking,
+  NativeModules
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
@@ -22,6 +23,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import DocumentPicker, { types } from 'react-native-document-picker';
 import RNFS from 'react-native-fs';
+
+const { FileUtilModule } = NativeModules;
 
 import { parseSongText } from './src/engine/SongParser';
 import { transposeChord, padChord } from './src/engine/ChordEngine';
@@ -144,19 +147,18 @@ function App(): React.JSX.Element {
 
           let defaultName = 'Canción Recibida';
           try {
-            // Intentar extraer nombre original
-            const stat = await RNFS.stat(url);
-            if (stat && (stat as any).originalFilepath) {
-              const parts = (stat as any).originalFilepath.split('/');
-              const lastPart = parts[parts.length - 1];
-              if (lastPart) defaultName = decodeURIComponent(lastPart).replace(/\.txt$/i, '');
-            } else {
-              const parts = decodeURIComponent(url).split('/');
-              const lastPart = parts[parts.length - 1];
-              // Evitar nombrar la canción como "content:..." basura
-              if (lastPart && !lastPart.includes('content:')) defaultName = lastPart.replace(/\.txt$/i, '');
+            // Invocar el módulo nativo que hemos creado para interrogar el ContentProvider de Android
+            if (FileUtilModule) {
+              const realFileName = await FileUtilModule.getFileName(url);
+              if (realFileName) {
+                defaultName = decodeURIComponent(realFileName).replace(/\.txt$/i, '');
+                // Validar si es una URI empaquetada o muy corrupta, y limpiarla temporalmente
+                if (defaultName.includes('content:')) defaultName = 'Canción Importada';
+              }
             }
-          } catch (e) { }
+          } catch (e) {
+            console.log("No se pudo extraer metadata del content provider", e);
+          }
 
           // Resetear el editor activo cargando la nueva canción
           setCurrentFileId(null);
@@ -380,6 +382,16 @@ function App(): React.JSX.Element {
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
 
+        {/* Global touch overlay when menu is open */}
+        {isMenuOpen && (
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setIsMenuOpen(false)}
+            delayPressIn={0}
+          />
+        )}
+
         <View style={styles.header}>
           <View style={[styles.transposeControls, { width: '100%', justifyContent: 'space-between', paddingHorizontal: 10 }]}>
             <TouchableOpacity style={styles.button} onPress={handleTransposeDown}>
@@ -486,12 +498,14 @@ function App(): React.JSX.Element {
               <Text style={styles.previewTitle} numberOfLines={2}>
                 {songTitle || 'Sin Título'} (en {firstChord})
               </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <TouchableOpacity style={[styles.shareButton, { marginRight: 10, backgroundColor: '#805AD5' }]} onPress={handleShareTextFile}>
-                  <Icon name="file-export" size={20} color="#FFFFFF" />
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                <TouchableOpacity style={[styles.shareButton, { marginRight: 15, backgroundColor: '#805AD5', flexDirection: 'row', alignItems: 'center' }]} onPress={handleShareTextFile}>
+                  <Icon name="file" size={28} color="#FFFFFF" style={{ marginRight: 8 }} />
+                  <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 }}>Enviar Archivo</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.shareButton} onPress={handleShareWhatsApp}>
-                  <Icon name="whatsapp" brand size={24} color="#FFFFFF" />
+                <TouchableOpacity style={[styles.shareButton, { flexDirection: 'row', alignItems: 'center' }]} onPress={handleShareWhatsApp}>
+                  <Icon name="whatsapp" brand size={28} color="#FFFFFF" style={{ marginRight: 8 }} />
+                  <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 }}>Enviar Imagen</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -776,10 +790,9 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   previewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: 12,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    marginBottom: 16,
   },
   shareButton: {
     backgroundColor: '#25D366',
