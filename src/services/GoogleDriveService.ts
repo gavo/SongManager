@@ -9,7 +9,7 @@ export const initGoogleSignIn = () => {
     GoogleSignin.configure({
         // We pass the provided Client ID here (webClientId is mostly used by the library for typings, 
         // Android natively infers its own from the SHA-1 registry if webClientId isn't enforcing it strictly)
-        webClientId: '840378972503-dsfh2vjg4k6n82jm2in2ikvlj44qjd2p.apps.googleusercontent.com',
+        webClientId: '134547580344-obt284fee04f8g1lftm0bvv3blhkgltt.apps.googleusercontent.com',
         scopes: ['https://www.googleapis.com/auth/drive'], // Full Google Drive permission to read user-uploaded txt files
         offlineAccess: true,
     });

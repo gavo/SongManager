@@ -35,6 +35,13 @@ local.properties
 !debug.keystore
 .kotlin/
 
+# Secrets and sensitive files
+android/app/google-services.json
+android/google-services.json
+android/build_log.txt
+android/app/keystore_info.txt
+*.jks
+
 # node.js
 #
 node_modules/
@@ -73,3 +80,5 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+/android/google-services.json

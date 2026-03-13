@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SongManager - Tu Cancionero Inteligente en la Nube</title>
+    <style>
+        :root {
+            --primary: #3182ce;
+            --primary-dark: #2c5282;
+            --text: #2d3748;
+            --light: #f7fafc;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+            background-color: var(--light);
+        }
+        header {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            padding: 60px 20px;
+            text-align: center;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 3em;
+            letter-spacing: -1px;
+        }
+        header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        .container {
+            max-width: 900px;
+            margin: -40px auto 40px;
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .section {
+            margin-bottom: 40px;
+        }
+        h2 {
+            color: var(--primary);
+            border-bottom: 2px solid var(--light);
+            padding-bottom: 10px;
+        }
+        .features {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .feature-item {
+            padding: 15px;
+            background: var(--light);
+            border-radius: 8px;
+        }
+        .data-usage {
+            background: #ebf8ff;
+            padding: 20px;
+            border-left: 5px solid var(--primary);
+            border-radius: 4px;
+        }
+        .footer {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+            font-size: 0.9em;
+        }
+        .footer a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: bold;
+            margin: 0 10px;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        .app-mockup {
+            max-width: 100%;
+            height: auto;
+            border-radius: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>SongManager</h1>
+    <p>La herramienta definitiva para músicos y líderes de alabanza</p>
+    <p><em>The ultimate tool for musicians and worship leaders</em></p>
+</header>
+
+<div class="container">
+    <div class="section" style="text-align: center;">
+        <img src="songmanager_logo.png" alt="SongManager Logo" class="app-mockup" style="max-width: 200px;">
+        <p style="font-size: 1.4em; color: var(--primary-dark); font-weight: bold;">Tu música, tus reglas, en tu propia nube.</p>
+        <p><em>Your music, your rules, on your own cloud.</em></p>
+    </div>
+
+    <div class="section">
+        <h2>¿Qué es SongManager? / What is SongManager?</h2>
+        <p>SongManager es una aplicación móvil diseñada para facilitar la vida del músico. Olvida los cancioneros en papel. Con SongManager puedes editar tus letras con acordes y tenerlos siempre disponibles en todos tus dispositivos.</p>
+        <p><em>SongManager is a mobile application designed to make life easier for musicians. Forget paper songbooks. With SongManager you can edit your lyrics with chords and always have them available on all your devices.</em></p>
+    </div>
+
+    <div class="section">
+        <h2>Funcionalidades / Features</h2>
+        <div class="features">
+            <div class="feature-item">
+                <strong>Transposición Instantánea / Instant Transposition</strong>
+                <p>Cambia el tono de cualquier canción con un solo toque. Los acordes se ajustan automáticamente.</p>
+            </div>
+            <div class="feature-item">
+                <strong>Exportación HD / HD Export</strong>
+                <p>Convierte tus canciones en imágenes de alta calidad para compartirlas fácilmente por WhatsApp o redes sociales.</p>
+            </div>
+            <div class="feature-item">
+                <strong>Nube Propia / Personal Cloud</strong>
+                <p>Usa tu propio Google Drive para guardar tus canciones. Sin servidores intermedios, tú eres el dueño de tus datos.</p>
+            </div>
+            <div class="feature-item">
+                <strong>Modo Offline / Offline Mode</strong>
+                <p>Accede a tus canciones incluso sin conexión a internet. La app sincroniza los cambios cuando vuelves a estar online.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Transparencia y Datos / Data Transparency</h2>
+        <div class="data-usage">
+            <p><strong>¿Por qué pedimos acceso a Google Drive? / Why do we request Google Drive access?</strong></p>
+            <p>SongManager solicita acceso exclusivamente a su propio directorio dentro de su Google Drive (permiso <code>drive.file</code>). Este acceso se utiliza para:</p>
+            <ul>
+                <li>Crear y guardar sus archivos de canciones (.txt) en una carpeta llamada "SongManager App".</li>
+                <li>Leer sus canciones guardadas para que pueda editarlas en la aplicación.</li>
+            </ul>
+            <p><strong>SongManager NO lee sus archivos personales, fotos o correos.</strong> No almacenamos ningún dato en servidores externos; toda su información reside de forma segura en su cuenta personal de Google.</p>
+            <hr>
+            <p><em>SongManager requests access exclusively to its own directory within your Google Drive. This access is used to create, save, and read your song files. <strong>SongManager DOES NOT read your personal files, photos, or emails.</strong></em></p>
+        </div>
+    </div>
+</div>
+
+<div class="footer">
+    <p>&copy; 2026 SongManager App</p>
+    <a href="docs/privacy-policy.html">Política de Privacidad / Privacy Policy</a> | 
+    <a href="docs/terms-of-service.html">Condiciones del Servicio / Terms of Service</a>
+</div>
+
+</body>
+</html>
