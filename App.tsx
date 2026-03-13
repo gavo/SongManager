@@ -21,7 +21,7 @@ import Share from 'react-native-share';
 import Icon from 'react-native-vector-icons/FontAwesome5';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-import DocumentPicker, { types } from 'react-native-document-picker';
+import { pick, types } from '@react-native-documents/picker';
 import RNFS from 'react-native-fs';
 
 const { FileUtilModule } = NativeModules;
@@ -289,7 +289,7 @@ function App(): React.JSX.Element {
   const handleImportLocalSong = async () => {
     setIsMenuOpen(false);
     try {
-      const result = await DocumentPicker.pickSingle({
+      const [result] = await pick({
         type: [types.plainText],
       });
 
