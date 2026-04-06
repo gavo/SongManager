@@ -29,7 +29,7 @@ import TextRecognition from '@react-native-ml-kit/text-recognition';
 const { FileUtilModule } = NativeModules;
 
 import { parseSongText } from './src/engine/SongParser';
-import { transposeChord, padChord } from './src/engine/ChordEngine';
+import { transposeChord, padChord, translateChord } from './src/engine/ChordEngine';
 import { saveSongLocally, listLocalSongs, loadLocalSong, deleteLocalSong } from './src/services/LocalFileService';
 
 function App(): React.JSX.Element {
@@ -45,6 +45,7 @@ function App(): React.JSX.Element {
   const [savedSongs, setSavedSongs] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentFileId, setCurrentFileId] = useState<string | null>(null);
+  const [chordFormat, setChordFormat] = useState<'latin' | 'anglo'>('latin');
   const viewShotRef = React.useRef<ViewShot>(null);
 
   // Initialize config once and auto login
@@ -54,10 +55,12 @@ function App(): React.JSX.Element {
         const storedTitle = await AsyncStorage.getItem('@songTitle');
         const storedText = await AsyncStorage.getItem('@rawText');
         const storedFileId = await AsyncStorage.getItem('@currentFileId');
+        const storedFormat = await AsyncStorage.getItem('@chordFormat');
 
         if (storedTitle !== null) setSongTitle(storedTitle);
         if (storedText !== null) setRawText(storedText);
         if (storedFileId !== null) setCurrentFileId(storedFileId);
+        if (storedFormat === 'latin' || storedFormat === 'anglo') setChordFormat(storedFormat);
       } catch (e) {
         console.error('Failed to load session.', e);
       } finally {
@@ -83,13 +86,15 @@ function App(): React.JSX.Element {
         } else {
           await AsyncStorage.removeItem('@currentFileId');
         }
+        
+        await AsyncStorage.setItem('@chordFormat', chordFormat);
       } catch (e) {
         console.error('Failed to save session.', e);
       }
     };
 
     saveSession();
-  }, [songTitle, rawText, currentFileId, isLoadingSession]);
+  }, [songTitle, rawText, currentFileId, isLoadingSession, chordFormat]);
 
   // Re-calculate the parsed song ONLY when raw text or transpose steps change
   const songData = useMemo(() => {
@@ -164,11 +169,11 @@ function App(): React.JSX.Element {
   const firstChord = useMemo(() => {
     for (const group of songData) {
       if (group.chordsLine && group.parsedChords && group.parsedChords.length > 0) {
-        return group.parsedChords[0].chord;
+        return translateChord(group.parsedChords[0].chord, chordFormat);
       }
     }
     return '-';
-  }, [songData]);
+  }, [songData, chordFormat]);
 
   const handleTransposeUp = () => setTransposeSteps((prev: number) => prev + 1);
   const handleTransposeDown = () => setTransposeSteps((prev: number) => prev - 1);
@@ -480,6 +485,13 @@ function App(): React.JSX.Element {
                       <Icon name="file-import" size={16} color="#805AD5" style={styles.menuIcon} />
                       <Text style={styles.menuItemText}>Importar .txt</Text>
                     </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => {
+                      setChordFormat(prev => prev === 'latin' ? 'anglo' : 'latin');
+                      setIsMenuOpen(false);
+                    }}>
+                      <Icon name="font" size={16} color="#D69E2E" style={styles.menuIcon} />
+                      <Text style={styles.menuItemText}>Formato: {chordFormat === 'latin' ? 'Do Re Mi' : 'A B C'}</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.menuItem} onPress={handleImportFromImage}>
                       <Icon name="camera" size={16} color="#DD6B20" style={styles.menuIcon} />
                       <Text style={styles.menuItemText}>Escanear Letra</Text>
@@ -558,7 +570,7 @@ function App(): React.JSX.Element {
                                     { left: chordObj.index * 7.5 } // Refined layout for smaller monospace font
                                   ]}
                                 >
-                                  {padChord(chordObj.chord)}
+                                  {padChord(translateChord(chordObj.chord, chordFormat))}
                                 </Text>
                               ))}
                             </View>

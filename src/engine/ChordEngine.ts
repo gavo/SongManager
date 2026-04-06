@@ -26,6 +26,42 @@ const ALIASES: Record<string, string> = {
   'Si#': 'Do',
 };
 
+export const ANGLO_NOTES = [
+  'C',
+  'C#',
+  'D',
+  'Eb',
+  'E',
+  'F',
+  'F#',
+  'G',
+  'G#',
+  'A',
+  'Bb',
+  'B',
+];
+
+const ANGLO_TO_LATIN: Record<string, string> = {
+  'C': 'Do',
+  'C#': 'Do#',
+  'Db': 'Do#',
+  'D': 'Re',
+  'D#': 'Mib',
+  'Eb': 'Mib',
+  'E': 'Mi',
+  'F': 'Fa',
+  'F#': 'Fa#',
+  'Gb': 'Fa#',
+  'G': 'Sol',
+  'G#': 'Sol#',
+  'Ab': 'Sol#',
+  'A': 'La',
+  'A#': 'Sib',
+  'Bb': 'Sib',
+  'B': 'Si',
+  'Cb': 'Si',
+};
+
 const CHORD_MAX_LENGTH = 10; // All chords will be visually padded to exactly this length
 
 /**
@@ -35,6 +71,7 @@ export const normalizeNote = (note: string): string => {
   const titleCase = note.charAt(0).toUpperCase() + note.slice(1).toLowerCase();
   if (NOTES.includes(titleCase)) return titleCase;
   if (ALIASES[titleCase]) return ALIASES[titleCase];
+  if (ANGLO_TO_LATIN[titleCase]) return ANGLO_TO_LATIN[titleCase];
   return titleCase;
 };
 
@@ -82,6 +119,26 @@ export const transposeChord = (chordStr: string, steps: number): string => {
     newNote = newNote.toLowerCase();
   }
 
+  return `${newNote}${parsed.modifier}`;
+};
+
+/**
+ * Translates a chord from its internal Latin representation to Anglo.
+ */
+export const translateChord = (chordStr: string, format: 'latin' | 'anglo'): string => {
+  if (format === 'latin') return chordStr;
+  
+  const parsed = parseChord(chordStr);
+  if (!parsed.isValid) return chordStr;
+  
+  const index = NOTES.indexOf(parsed.note);
+  if (index === -1) return chordStr;
+  
+  let newNote = ANGLO_NOTES[index];
+  if (parsed.isLowercase) {
+    newNote = newNote.toLowerCase();
+  }
+  
   return `${newNote}${parsed.modifier}`;
 };
 

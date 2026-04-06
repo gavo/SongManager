@@ -40,62 +40,15 @@ export const parseSongText = (rawText: string): SongLineGroup[] => {
   const lines = rawText.split(/\r?\n/);
   const groups: SongLineGroup[] = [];
 
-  let pendingChordLine: string | null = null;
-  let expectedType: 'chords' | 'lyrics' = 'chords';
+  for (let i = 0; i < lines.length; i += 2) {
+    const chordsLine = lines[i];
+    const lyricsLine = i + 1 < lines.length ? lines[i + 1] : null;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (line.trim() === '') {
-      // Empty line, flush any pending chord line that didn't have lyrics
-      if (pendingChordLine) {
-        groups.push({
-          id: `line_${i}_chords_only`,
-          chordsLine: pendingChordLine,
-          lyricsLine: null,
-          parsedChords: extractChordsPositions(pendingChordLine),
-        });
-        pendingChordLine = null;
-      }
-
-      // push an empty group representing a break
-      groups.push({
-        id: `line_${i}_empty`,
-        chordsLine: null,
-        lyricsLine: '',
-        parsedChords: [],
-      });
-
-      // Reset cadence
-      expectedType = 'chords';
-      continue;
-    }
-
-    if (expectedType === 'chords') {
-      pendingChordLine = line;
-      expectedType = 'lyrics';
-    } else {
-      // Lyrics line
-      groups.push({
-        id: `line_${i}_full`,
-        chordsLine: pendingChordLine,
-        lyricsLine: line,
-        parsedChords: pendingChordLine
-          ? extractChordsPositions(pendingChordLine)
-          : [],
-      });
-      pendingChordLine = null;
-      expectedType = 'chords';
-    }
-  }
-
-  // Flush any remaining chord line at the end of the song
-  if (pendingChordLine) {
     groups.push({
-      id: `line_final_chords_only`,
-      chordsLine: pendingChordLine,
-      lyricsLine: null,
-      parsedChords: extractChordsPositions(pendingChordLine),
+      id: `line_group_${i}`,
+      chordsLine: chordsLine,
+      lyricsLine: lyricsLine,
+      parsedChords: extractChordsPositions(chordsLine)
     });
   }
 
