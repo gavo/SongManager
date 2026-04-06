@@ -1,18 +1,29 @@
 export const NOTES = [
-  'Do', 'Do#', 'Re', 'Mib', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'Sib', 'Si'
+  'Do',
+  'Do#',
+  'Re',
+  'Mib',
+  'Mi',
+  'Fa',
+  'Fa#',
+  'Sol',
+  'Sol#',
+  'La',
+  'Sib',
+  'Si',
 ];
 
 // Alias mapping for flexible parsing
 const ALIASES: Record<string, string> = {
-  'Reb': 'Do#',
+  Reb: 'Do#',
   'Re#': 'Mib',
   'Mi#': 'Fa', // Rarely used but possible
-  'Fab': 'Mi',
-  'Solb': 'Fa#',
-  'Lab': 'Sol#',
+  Fab: 'Mi',
+  Solb: 'Fa#',
+  Lab: 'Sol#',
   'La#': 'Sib',
-  'Dob': 'Si',
-  'Si#': 'Do'
+  Dob: 'Si',
+  'Si#': 'Do',
 };
 
 const CHORD_MAX_LENGTH = 10; // All chords will be visually padded to exactly this length
@@ -34,18 +45,20 @@ export const parseChord = (chordStr: string) => {
   // Match the note part (Do, Re, Mi..., with optional # or b)
   const match = chordStr.match(/^([a-zA-Z]{2,3}[#b]?)(.*)$/);
 
-  if (!match) return { note: chordStr, modifier: '', isValid: false, isLowercase: false };
+  if (!match)
+    return { note: chordStr, modifier: '', isValid: false, isLowercase: false };
 
   const rawNote = match[1];
   const modifier = match[2];
   const note = normalizeNote(rawNote);
-  const isLowercase = rawNote.length > 0 && rawNote[0] === rawNote[0].toLowerCase();
+  const isLowercase =
+    rawNote.length > 0 && rawNote[0] === rawNote[0].toLowerCase();
 
   return {
     note,
     modifier,
     isValid: NOTES.includes(note),
-    isLowercase
+    isLowercase,
   };
 };
 
@@ -74,8 +87,8 @@ export const transposeChord = (chordStr: string, steps: number): string => {
 
 /**
  * Pads a chord string to exactly CHORD_MAX_LENGTH using trailing spaces.
- * This guarantees that when parsing the "Dos Lineas" format, 
- * chords won't push subsequent lyrics/chords horizontally 
+ * This guarantees that when parsing the "Dos Lineas" format,
+ * chords won't push subsequent lyrics/chords horizontally
  * when transposed.
  */
 export const padChord = (chordStr: string): string => {

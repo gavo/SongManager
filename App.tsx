@@ -13,7 +13,8 @@ import {
   ActivityIndicator,
   FlatList,
   Linking,
-  NativeModules
+  NativeModules,
+  PermissionsAndroid
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
@@ -22,6 +23,8 @@ import Icon from 'react-native-vector-icons/FontAwesome5';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pick, types } from '@react-native-documents/picker';
 import RNFS from 'react-native-fs';
+import { launchCamera, launchImageLibrary, ImagePickerResponse } from 'react-native-image-picker';
+import TextRecognition from '@react-native-ml-kit/text-recognition';
 
 const { FileUtilModule } = NativeModules;
 
@@ -238,7 +241,7 @@ function App(): React.JSX.Element {
       setRawText(text);
       setTransposeSteps(0);
     } catch (e: any) {
-      Alert.alert('Error', 'No se pudo cargar la canción');
+      Alert.alert('Error', 'No se pudo cargar la canción', e.message);
     }
   };
 
@@ -277,6 +280,73 @@ function App(): React.JSX.Element {
         Alert.alert('Error', 'No se pudo leer el archivo seleccionado: ' + err.message);
       }
     }
+  };
+
+  const handleImportFromImage = () => {
+    setIsMenuOpen(false);
+
+    const processImage = async (response: ImagePickerResponse) => {
+      if (response.didCancel || !response.assets || response.assets.length === 0) return;
+      
+      const uri = response.assets[0].uri;
+      if (!uri) return;
+
+      try {
+        const result = await TextRecognition.recognize(uri);
+        if (result && result.text) {
+          setCurrentFileId(null);
+          setSongTitle('Letra Escaneada');
+          setRawText(result.text);
+          setTransposeSteps(0);
+          Alert.alert('Escaneo Completado', 'Por favor, revisa el texto importado y haz los ajustes necesarios antes de Guardar.');
+        } else {
+          Alert.alert('Ups', 'No se detectó texto en la imagen.');
+        }
+      } catch (err: any) {
+        Alert.alert('Error', 'Hubo un problema al procesar la imagen: ' + err.message);
+      }
+    };
+
+    Alert.alert(
+      'Importar Letra',
+      '¿Desde dónde quieres obtener la imagen?',
+      [
+        {
+          text: 'Cámara',
+          onPress: async () => {
+            try {
+              const granted = await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.CAMERA,
+                {
+                  title: 'Permiso de Cámara',
+                  message: 'Necesitamos acceso a la cámara para escanear las letras.',
+                  buttonNeutral: 'Preguntar Luego',
+                  buttonNegative: 'Cancelar',
+                  buttonPositive: 'Aceptar',
+                },
+              );
+              if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+                launchCamera({ mediaType: 'photo' }, processImage);
+              } else {
+                Alert.alert('Permiso Denegado', 'No se ha concedido permiso para usar la cámara.');
+              }
+            } catch (err) {
+              console.warn(err);
+            }
+          }
+        },
+        {
+          text: 'Galería',
+          onPress: () => {
+            launchImageLibrary({ mediaType: 'photo' }, processImage);
+          }
+        },
+        {
+          text: 'Cancelar',
+          style: 'cancel'
+        }
+      ]
+    );
   };
 
   const handleShareWhatsApp = async () => {
@@ -409,6 +479,10 @@ function App(): React.JSX.Element {
                     <TouchableOpacity style={styles.menuItem} onPress={handleImportLocalSong}>
                       <Icon name="file-import" size={16} color="#805AD5" style={styles.menuIcon} />
                       <Text style={styles.menuItemText}>Importar .txt</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={handleImportFromImage}>
+                      <Icon name="camera" size={16} color="#DD6B20" style={styles.menuIcon} />
+                      <Text style={styles.menuItemText}>Escanear Letra</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.menuItem} onPress={handleSaveLocally} disabled={isSaving}>
                       {isSaving ? <ActivityIndicator size="small" color="#48BB78" style={styles.menuIcon} /> : <Icon name="save" size={16} color="#48BB78" style={styles.menuIcon} />}
