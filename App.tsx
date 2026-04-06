@@ -20,7 +20,6 @@ import ViewShot from 'react-native-view-shot';
 import Share from 'react-native-share';
 import Icon from 'react-native-vector-icons/FontAwesome5';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import NetInfo from '@react-native-community/netinfo';
 import { pick, types } from '@react-native-documents/picker';
 import RNFS from 'react-native-fs';
 
@@ -28,14 +27,13 @@ const { FileUtilModule } = NativeModules;
 
 import { parseSongText } from './src/engine/SongParser';
 import { transposeChord, padChord } from './src/engine/ChordEngine';
-import { initGoogleSignIn, signIn, signInSilently, signOut, saveSongToDrive, listSongsFromDrive, loadSongFromDrive, deleteSongFromDrive, syncOfflineQueue, DriveUser } from './src/services/GoogleDriveService';
+import { saveSongLocally, listLocalSongs, loadLocalSong, deleteLocalSong } from './src/services/LocalFileService';
 
 function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
   const [songTitle, setSongTitle] = useState('');
   const [rawText, setRawText] = useState('');
   const [transposeSteps, setTransposeSteps] = useState(0);
-  const [user, setUser] = useState<DriveUser | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -65,35 +63,8 @@ function App(): React.JSX.Element {
     };
 
     hydrateSession();
-    initGoogleSignIn();
-
-    const autoLogin = async () => {
-      let activeUser = await signInSilently();
-      if (!activeUser) {
-        // Fallback to interactive sign in if there's no pre-existing session
-        activeUser = await signIn();
-      }
-      if (activeUser) {
-        setUser(activeUser);
-      }
-    };
-
-    autoLogin();
   }, []);
 
-  // Background watcher: trigger Drive upload as soon as Wifi/Internet comes back
-  React.useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      if (state.isConnected && user) {
-        // Run invisible queue uploader
-        syncOfflineQueue();
-      }
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [user]);
 
   // Save session state automatically whenever it changes
   React.useEffect(() => {
@@ -199,22 +170,16 @@ function App(): React.JSX.Element {
   const handleTransposeUp = () => setTransposeSteps((prev: number) => prev + 1);
   const handleTransposeDown = () => setTransposeSteps((prev: number) => prev - 1);
 
-  const handleLogout = async () => {
-    setIsMenuOpen(false);
-    await signOut();
-    setUser(null);
-  };
 
-  const handleSaveToDrive = async () => {
+  const handleSaveLocally = async () => {
     setIsMenuOpen(false);
-    if (!user) return Alert.alert('Error', 'Debes iniciar sesión primero');
     if (!songTitle.trim()) return Alert.alert('Error', 'Debes ponerle un título a la canción');
 
     setIsSaving(true);
     try {
-      const res = await saveSongToDrive(songTitle.trim(), rawText);
-      setCurrentFileId(res.id);
-      Alert.alert('¡Éxito!', `¡"${songTitle}" fue guardada en tu Google Drive!`);
+      const res = await saveSongLocally(songTitle.trim(), rawText);
+      setCurrentFileId(res.filePath); // Using filePath as identifier for local storage
+      Alert.alert('¡Éxito!', `¡"${songTitle}" fue guardada en tu dispositivo!`);
     } catch (e: any) {
       Alert.alert('Error al guardar', e.message || 'Error desconocido');
     } finally {
@@ -222,13 +187,13 @@ function App(): React.JSX.Element {
     }
   };
 
-  const handleDeleteDriveSong = async () => {
+  const handleDeleteLocalSong = async () => {
     setIsMenuOpen(false);
-    if (!currentFileId) return Alert.alert('Operación no Válida', 'Para borrar una canción primero debes seleccionarla o guardarla en Drive.');
+    if (!currentFileId) return Alert.alert('Operación no Válida', 'Para borrar una canción primero debes seleccionarla o guardarla localmente.');
 
     Alert.alert(
       'Confirmar Borrado',
-      `¿Estás seguro de que deseas eliminar permanentemente "${songTitle}" de tu Google Drive?`,
+      `¿Estás seguro de que deseas eliminar permanentemente "${songTitle}"?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -236,7 +201,7 @@ function App(): React.JSX.Element {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteSongFromDrive(currentFileId);
+              await deleteLocalSong(currentFileId);
               Alert.alert('Eliminado', 'La canción ha sido borrada exitosamente.');
               setCurrentFileId(null);
             } catch (e: any) {
@@ -254,7 +219,7 @@ function App(): React.JSX.Element {
     setIsLoadingSongs(true);
     setSearchQuery('');
     try {
-      const songs = await listSongsFromDrive();
+      const songs = await listLocalSongs();
       setSavedSongs(songs);
     } catch (e: any) {
       Alert.alert('Error al cargar', e.message || 'Error desconocido');
@@ -264,17 +229,16 @@ function App(): React.JSX.Element {
     }
   };
 
-  const handleLoadSong = async (fileId: string, fileName: string) => {
+  const handleLoadSong = async (filePath: string, fileName: string) => {
     try {
       setModalVisible(false);
-      // Show a short UI loading state if desired, but await is fast for TXT
-      const text = await loadSongFromDrive(fileId);
-      setCurrentFileId(fileId);
+      const text = await loadLocalSong(filePath);
+      setCurrentFileId(filePath);
       setSongTitle(fileName.replace('.txt', ''));
       setRawText(text);
-      setTransposeSteps(0); // Reset transpose when loading new song
+      setTransposeSteps(0);
     } catch (e: any) {
-      Alert.alert('Error', 'No se pudo descargar la canción');
+      Alert.alert('Error', 'No se pudo cargar la canción');
     }
   };
 
@@ -290,6 +254,7 @@ function App(): React.JSX.Element {
     setIsMenuOpen(false);
     try {
       const [result] = await pick({
+        mode: 'open',
         type: [types.plainText],
       });
 
@@ -299,17 +264,16 @@ function App(): React.JSX.Element {
         const defaultName = result.name ? result.name.replace('.txt', '') : 'Canción Local';
 
         // Reset editor with local song data
-        setCurrentFileId(null); // Because this file is not on Drive yet
+        setCurrentFileId(null); 
         setSongTitle(defaultName);
         setRawText(textContent);
         setTransposeSteps(0);
 
-        Alert.alert('Importación Exitosa', 'El archivo local ha sido cargado en el editor. Recuerda Guardar para subirlo a tu Drive.');
+        Alert.alert('Importación Exitosa', 'El archivo local ha sido cargado en el editor. Recuerda Guardar para persistirlo en la lista de canciones.');
       }
     } catch (err: any) {
-      if (DocumentPicker.isCancel(err)) {
-        // User cancelled, do nothing
-      } else {
+      // General error handling, newer pickers might not need DocumentPicker.isCancel
+      if (err.message !== 'User cancelled') {
         Alert.alert('Error', 'No se pudo leer el archivo seleccionado: ' + err.message);
       }
     }
@@ -429,46 +393,34 @@ function App(): React.JSX.Element {
 
           <View style={styles.editorContainer}>
             <View style={styles.cloudToolbar}>
-              {user ? (
-                <View style={[styles.userBar, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', position: 'relative', zIndex: 100 }]}>
-                  <Text style={[styles.userName, { marginBottom: 0 }]}>Hola, {user.name || 'Usuario'}</Text>
+              <View style={[styles.userBar, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', position: 'relative', zIndex: 100 }]}>
+                <Text style={[styles.userName, { marginBottom: 0 }]}>Mis Canciones</Text>
 
-                  <TouchableOpacity style={styles.menuToggleButton} onPress={() => setIsMenuOpen(!isMenuOpen)}>
-                    <Icon name="ellipsis-v" size={20} color="#4A5568" />
-                  </TouchableOpacity>
+                <TouchableOpacity style={styles.menuToggleButton} onPress={() => setIsMenuOpen(!isMenuOpen)}>
+                  <Icon name="ellipsis-v" size={20} color="#4A5568" />
+                </TouchableOpacity>
 
-                  {isMenuOpen && (
-                    <View style={styles.dropdownMenu}>
-                      <TouchableOpacity style={styles.menuItem} onPress={handleOpenLoadModal}>
-                        <Icon name="folder-open" size={16} color="#3182CE" style={styles.menuIcon} />
-                        <Text style={styles.menuItemText}>Mis Canciones</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.menuItem} onPress={handleImportLocalSong}>
-                        <Icon name="file-import" size={16} color="#805AD5" style={styles.menuIcon} />
-                        <Text style={styles.menuItemText}>Importar Archivo</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.menuItem} onPress={handleSaveToDrive} disabled={isSaving}>
-                        {isSaving ? <ActivityIndicator size="small" color="#48BB78" style={styles.menuIcon} /> : <Icon name="save" size={16} color="#48BB78" style={styles.menuIcon} />}
-                        <Text style={styles.menuItemText}>Guardar</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.menuItem} onPress={handleDeleteDriveSong}>
-                        <Icon name="trash-alt" size={16} color="#E53E3E" style={styles.menuIcon} />
-                        <Text style={styles.menuItemText}>Eliminar Canción</Text>
-                      </TouchableOpacity>
-                      <View style={styles.menuDivider} />
-                      <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
-                        <Icon name="sign-out-alt" size={16} color="#F56565" style={styles.menuIcon} />
-                        <Text style={styles.menuItemText}>Cerrar Sesión</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              ) : (
-                <View style={[styles.userBar, { justifyContent: 'center', backgroundColor: 'transparent' }]}>
-                  <ActivityIndicator size="small" color="#3182CE" />
-                  <Text style={{ marginLeft: 10, color: '#718096', fontWeight: 'bold' }}>Sincronizando Drive...</Text>
-                </View>
-              )}
+                {isMenuOpen && (
+                  <View style={styles.dropdownMenu}>
+                    <TouchableOpacity style={styles.menuItem} onPress={handleOpenLoadModal}>
+                      <Icon name="folder-open" size={16} color="#3182CE" style={styles.menuIcon} />
+                      <Text style={styles.menuItemText}>Cargar Canción</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={handleImportLocalSong}>
+                      <Icon name="file-import" size={16} color="#805AD5" style={styles.menuIcon} />
+                      <Text style={styles.menuItemText}>Importar .txt</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={handleSaveLocally} disabled={isSaving}>
+                      {isSaving ? <ActivityIndicator size="small" color="#48BB78" style={styles.menuIcon} /> : <Icon name="save" size={16} color="#48BB78" style={styles.menuIcon} />}
+                      <Text style={styles.menuItemText}>Guardar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={handleDeleteLocalSong}>
+                      <Icon name="trash-alt" size={16} color="#E53E3E" style={styles.menuIcon} />
+                      <Text style={styles.menuItemText}>Eliminar Actual</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             </View>
 
             <Text style={styles.sectionTitle}>Editor</Text>
@@ -557,7 +509,7 @@ function App(): React.JSX.Element {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Mis Canciones en Drive</Text>
+                <Text style={styles.modalTitle}>Mis Canciones</Text>
                 <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalCloseButton}>
                   <Text style={styles.modalCloseText}>X</Text>
                 </TouchableOpacity>
@@ -585,7 +537,7 @@ function App(): React.JSX.Element {
                     <TouchableOpacity style={styles.songItem} onPress={() => handleLoadSong(item.id, item.name)}>
                       <Text style={styles.songItemName}>{item.name.replace('.txt', '')}</Text>
                       <Text style={styles.songItemDate}>
-                        {new Date(item.modifiedTime).toLocaleDateString()}
+                        Local
                       </Text>
                     </TouchableOpacity>
                   )}
