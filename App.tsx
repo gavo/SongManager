@@ -178,6 +178,14 @@ function App(): React.JSX.Element {
   const handleTransposeUp = () => setTransposeSteps((prev: number) => prev + 1);
   const handleTransposeDown = () => setTransposeSteps((prev: number) => prev - 1);
 
+  const handleNewSong = () => {
+    setIsMenuOpen(false);
+    setSongTitle('');
+    setRawText('');
+    setCurrentFileId(null);
+    setTransposeSteps(0);
+  };
+
 
   const handleSaveLocally = async () => {
     setIsMenuOpen(false);
@@ -477,6 +485,10 @@ function App(): React.JSX.Element {
 
                 {isMenuOpen && (
                   <View style={styles.dropdownMenu}>
+                    <TouchableOpacity style={styles.menuItem} onPress={handleNewSong}>
+                      <Icon name="file-medical" size={16} color="#3182CE" style={styles.menuIcon} />
+                      <Text style={styles.menuItemText}>Nueva Canción</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.menuItem} onPress={handleOpenLoadModal}>
                       <Icon name="folder-open" size={16} color="#3182CE" style={styles.menuIcon} />
                       <Text style={styles.menuItemText}>Cargar Canción</Text>
