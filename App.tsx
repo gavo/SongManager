@@ -562,17 +562,17 @@ function App(): React.JSX.Element {
                           {/* Chords Line */}
                           {group.chordsLine && (
                             <View style={styles.chordLineContainer}>
-                              {group.parsedChords.map((chordObj: any, index: number) => (
-                                <Text
-                                  key={index}
-                                  style={[
-                                    styles.chordText,
-                                    { left: chordObj.index * 7.5 } // Refined layout for smaller monospace font
-                                  ]}
-                                >
-                                  {padChord(translateChord(chordObj.chord, chordFormat))}
-                                </Text>
-                              ))}
+                              <Text style={styles.chordText}>
+                                {(() => {
+                                  let lineStr = '';
+                                  for (const chordObj of group.parsedChords) {
+                                    const translated = translateChord(chordObj.chord, chordFormat);
+                                    const spacesToAdd = Math.max(0, chordObj.index - lineStr.length);
+                                    lineStr += ' '.repeat(spacesToAdd) + translated;
+                                  }
+                                  return lineStr;
+                                })()}
+                              </Text>
                             </View>
                           )}
                           {/* Lyrics Line */}
@@ -864,13 +864,10 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   chordLineContainer: {
-    height: 18,
     flexDirection: 'row',
-    position: 'relative',
     marginBottom: 0,
   },
   chordText: {
-    position: 'absolute',
     color: '#E53E3E',
     fontWeight: '800',
     fontFamily: 'monospace',
