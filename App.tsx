@@ -46,6 +46,7 @@ function App(): React.JSX.Element {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentFileId, setCurrentFileId] = useState<string | null>(null);
   const [chordFormat, setChordFormat] = useState<'latin' | 'anglo'>('latin');
+  const [activeSubMenu, setActiveSubMenu] = useState<'main' | 'file' | 'import' | 'settings'>('main');
   const viewShotRef = React.useRef<ViewShot>(null);
 
   // Initialize config once and auto login
@@ -479,43 +480,92 @@ function App(): React.JSX.Element {
               <View style={[styles.userBar, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', position: 'relative', zIndex: 100 }]}>
                 <Text style={[styles.userName, { marginBottom: 0 }]}>Mis Canciones</Text>
 
-                <TouchableOpacity style={styles.menuToggleButton} onPress={() => setIsMenuOpen(!isMenuOpen)}>
+                <TouchableOpacity style={styles.menuToggleButton} onPress={() => {
+                  setActiveSubMenu('main');
+                  setIsMenuOpen(!isMenuOpen);
+                }}>
                   <Icon name="ellipsis-v" size={20} color="#4A5568" />
                 </TouchableOpacity>
 
                 {isMenuOpen && (
                   <View style={styles.dropdownMenu}>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleNewSong}>
-                      <Icon name="file-medical" size={16} color="#3182CE" style={styles.menuIcon} />
-                      <Text style={styles.menuItemText}>Nueva Canción</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleOpenLoadModal}>
-                      <Icon name="folder-open" size={16} color="#3182CE" style={styles.menuIcon} />
-                      <Text style={styles.menuItemText}>Cargar Canción</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleImportLocalSong}>
-                      <Icon name="file-import" size={16} color="#805AD5" style={styles.menuIcon} />
-                      <Text style={styles.menuItemText}>Importar .txt</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => {
-                      setChordFormat(prev => prev === 'latin' ? 'anglo' : 'latin');
-                      setIsMenuOpen(false);
-                    }}>
-                      <Icon name="font" size={16} color="#D69E2E" style={styles.menuIcon} />
-                      <Text style={styles.menuItemText}>Formato: {chordFormat === 'latin' ? 'Do Re Mi' : 'A B C'}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleImportFromImage}>
-                      <Icon name="camera" size={16} color="#DD6B20" style={styles.menuIcon} />
-                      <Text style={styles.menuItemText}>Escanear Letra</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleSaveLocally} disabled={isSaving}>
-                      {isSaving ? <ActivityIndicator size="small" color="#48BB78" style={styles.menuIcon} /> : <Icon name="save" size={16} color="#48BB78" style={styles.menuIcon} />}
-                      <Text style={styles.menuItemText}>Guardar</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleDeleteLocalSong}>
-                      <Icon name="trash-alt" size={16} color="#E53E3E" style={styles.menuIcon} />
-                      <Text style={styles.menuItemText}>Eliminar Actual</Text>
-                    </TouchableOpacity>
+                    {activeSubMenu === 'main' && (
+                      <>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => setActiveSubMenu('file')}>
+                          <Icon name="folder" size={16} color="#3182CE" style={styles.menuIcon} />
+                          <Text style={styles.menuItemText}>Archivo</Text>
+                          <Icon name="chevron-right" size={10} color="#A0AEC0" style={{ marginLeft: 20 }} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => setActiveSubMenu('import')}>
+                          <Icon name="cloud-download-alt" size={16} color="#805AD5" style={styles.menuIcon} />
+                          <Text style={styles.menuItemText}>Importar</Text>
+                          <Icon name="chevron-right" size={10} color="#A0AEC0" style={{ marginLeft: 20 }} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => setActiveSubMenu('settings')}>
+                          <Icon name="cog" size={16} color="#D69E2E" style={styles.menuIcon} />
+                          <Text style={styles.menuItemText}>Ajustes</Text>
+                          <Icon name="chevron-right" size={10} color="#A0AEC0" style={{ marginLeft: 20 }} />
+                        </TouchableOpacity>
+                      </>
+                    )}
+
+                    {activeSubMenu === 'file' && (
+                      <>
+                        <TouchableOpacity style={[styles.menuItem, styles.menuBack]} onPress={() => setActiveSubMenu('main')}>
+                          <Icon name="arrow-left" size={14} color="#A0AEC0" style={styles.menuIcon} />
+                          <Text style={styles.menuBackText}>Volver</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={handleNewSong}>
+                          <Icon name="file-medical" size={16} color="#3182CE" style={styles.menuIcon} />
+                          <Text style={styles.menuItemText}>Nueva Canción</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={handleOpenLoadModal}>
+                          <Icon name="folder-open" size={16} color="#3182CE" style={styles.menuIcon} />
+                          <Text style={styles.menuItemText}>Cargar Canción</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={handleSaveLocally} disabled={isSaving}>
+                          {isSaving ? <ActivityIndicator size="small" color="#48BB78" style={styles.menuIcon} /> : <Icon name="save" size={16} color="#48BB78" style={styles.menuIcon} />}
+                          <Text style={styles.menuItemText}>Guardar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={handleDeleteLocalSong}>
+                          <Icon name="trash-alt" size={16} color="#E53E3E" style={styles.menuIcon} />
+                          <Text style={styles.menuItemText}>Eliminar Actual</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+
+                    {activeSubMenu === 'import' && (
+                      <>
+                        <TouchableOpacity style={[styles.menuItem, styles.menuBack]} onPress={() => setActiveSubMenu('main')}>
+                          <Icon name="arrow-left" size={14} color="#A0AEC0" style={styles.menuIcon} />
+                          <Text style={styles.menuBackText}>Volver</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={handleImportLocalSong}>
+                          <Icon name="file-import" size={16} color="#805AD5" style={styles.menuIcon} />
+                          <Text style={styles.menuItemText}>Importar .txt</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={handleImportFromImage}>
+                          <Icon name="camera" size={16} color="#DD6B20" style={styles.menuIcon} />
+                          <Text style={styles.menuItemText}>Escanear Letra</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+
+                    {activeSubMenu === 'settings' && (
+                      <>
+                        <TouchableOpacity style={[styles.menuItem, styles.menuBack]} onPress={() => setActiveSubMenu('main')}>
+                          <Icon name="arrow-left" size={14} color="#A0AEC0" style={styles.menuIcon} />
+                          <Text style={styles.menuBackText}>Volver</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => {
+                          setChordFormat(prev => prev === 'latin' ? 'anglo' : 'latin');
+                          setIsMenuOpen(false);
+                        }}>
+                          <Icon name="font" size={16} color="#D69E2E" style={styles.menuIcon} />
+                          <Text style={styles.menuItemText}>Formato: {chordFormat === 'latin' ? 'Do Re Mi' : 'A B C'}</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
                   </View>
                 )}
               </View>
@@ -762,6 +812,20 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#E2E8F0',
     marginVertical: 4,
+  },
+  menuBack: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDF2F7',
+    marginBottom: 4,
+    backgroundColor: '#F7FAFC',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  menuBackText: {
+    fontSize: 13,
+    color: '#A0AEC0',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
   },
   cloudButtonLogin: {
     flexDirection: 'row',
