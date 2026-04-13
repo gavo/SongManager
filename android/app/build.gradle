@@ -86,8 +86,8 @@ android {
         applicationId "com.songmanager"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName "2.2"
+        versionCode 5
+        versionName "3.0.0"
     }
     signingConfigs {
         debug {
